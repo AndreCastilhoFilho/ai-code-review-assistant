@@ -5,37 +5,83 @@
 @inject PRAnalysisService PRService
 @rendermode InteractiveServer
 
+<div class="flex flex-col items-center justify-center min-h-screen p-6">
+    <div class="bg-white shadow-lg rounded-lg p-8 w-full max-w-lg">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center flex items-center justify-center gap-2">
+            🔍 GitHub PR Analyzer
+        </h2>
 
-<h3>GitHub PR Analyzer</h3>
+        <!-- Analyzer Form -->
+        <div class="flex flex-col space-y-4">
+            <!-- GitHub PR URL Input -->
+            <div class="flex flex-col">
+                <label class="text-sm font-semibold text-gray-700 mb-1">
+                    GitHub PR URL:
+                </label>
+                <input @bind="repo" @bind:event="oninput"
+                       placeholder="Enter GitHub PR URL..."
+                       class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
 
-<input @bind="repo" @bind:event="oninput" placeholder="Enter GitHub PR URL..." class="form-control" />
+            <!-- AI Model Selection & Analyze Button -->
+            <div class="grid grid-cols-3 gap-4">
+                <!-- AI Model Dropdown -->
+                <div class="col-span-2">
+                    <label class="text-sm font-semibold text-gray-700 mb-1 block">
+                        AI Model:
+                    </label>
+                    <select @bind="SelectedModel"
+                            class="w-full h-12 px-4 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        @foreach (var model in Enum.GetValues<AiModelType>())
+                        {
+                            <option value="@model">@model</option>
+                        }
+                    </select>
+                </div>
 
-<select @bind="SelectedModel">
-    @foreach (var model in Enum.GetValues<AiModelType>())
-    {
-        <option value="@model">@model</option>
-    }
-</select>
+                <!-- Analyze Button -->
+                <div class="col-span-1">
+                    <button @onclick="Analyze"
+                            disabled="@(!IsValidUrl || isAnalyzing)"
+                            class="w-full h-12 text-lg font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed
+                         @(isAnalyzing ? "bg-gray-300 text-gray-700" : "bg-blue-600 hover:bg-blue-700 text-white")">
+                        @(isAnalyzing ? "Analyzing..." : "Analyze")
+                    </button>
+                </div>
+            </div>
+        </div>
 
-<button @onclick="Analyze" disabled="@(!IsValidUrl || isAnalyzing)"> @(isAnalyzing ? "Analyzing..." : "Analyze")</button>
+        <!-- Status Messages -->
+        <div class="mt-6 text-center">
+            @if (isAnalyzing)
+            {
+                <p class="text-gray-600">
+                    🔄 Analyzing the pull request, please wait...
+                </p>
+                <div class="flex justify-center mt-2">
+                    <div class="animate-spin h-6 w-6 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <p class="text-red-600 font-semibold mt-2">❌ @errorMessage</p>
+            }
+        </div>
 
-
-@if (isAnalyzing)
-{
-    <p>Analyzing the pull request, please wait...</p>
-}
-else if (!string.IsNullOrEmpty(errorMessage))
-{
-    <p style="color:red;"><strong>Error:</strong> @errorMessage</p>
-}
-else @if (!string.IsNullOrEmpty(analysisResultFormatted))
-{
-    <br />
-    @((MarkupString)analysisResultFormatted)
-}
+        <!-- Analysis Results -->
+        @if (!string.IsNullOrEmpty(analysisResultFormatted))
+        {
+            <div class="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">📋 Analysis Report:</h3>
+                <div class="text-gray-700 leading-relaxed">
+                    @((MarkupString)analysisResultFormatted)
+                </div>
+            </div>
+        }
+    </div>
+</div>
 
 @code {
-
     private string analysisResultFormatted = string.Empty;
     private string repo = string.Empty;
     private bool isAnalyzing = false;
@@ -48,21 +94,22 @@ else @if (!string.IsNullOrEmpty(analysisResultFormatted))
         if (!IsValidUrl || isAnalyzing) return;
 
         isAnalyzing = true;
+        errorMessage = string.Empty;
+        analysisResultFormatted = string.Empty;
 
         try
         {
             var rawAnalysis = await PRService.AnalyzePR(repo, SelectedModel);
 
-            // Clean up and prepare the HTML for rendering
             analysisResultFormatted = rawAnalysis
-                .Trim('"')                     // Removes extra leading/trailing double quotes
-                .Replace("\\r\\n", "\n")        // Preserve new lines
-                .Replace("\\n", "\n")           // Ensure additional new lines render properly
-                .Replace("\\\"", "\"");         // Fix escaped double quotes
+              .Trim('"')
+              .Replace("\\r\\n", "\n")
+              .Replace("\\n", "\n")
+              .Replace("\\\"", "\"");
         }
         catch (Exception ex)
         {
-            errorMessage = $"An error occurred during analysis: {ex.Message}";
+            errorMessage = $"An error occurred: {ex.Message}";
         }
         finally
         {
@@ -70,7 +117,6 @@ else @if (!string.IsNullOrEmpty(analysisResultFormatted))
         }
     }
 
-    // Function to validate GitHub PR URLs
     private bool IsValidGitHubPrUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url)) return false;

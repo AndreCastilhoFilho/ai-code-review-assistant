@@ -27,15 +27,14 @@ else @if (!string.IsNullOrEmpty(analysisResultFormatted))
 @code {
 
     private string analysisResultFormatted = string.Empty;
-    private string repo;
+    private string repo = string.Empty;
     private bool isAnalyzing = false;
-    private string errorMessage;
+    private string errorMessage = string.Empty;
 
 
     private async Task Analyze()
     {
         isAnalyzing = true;
-        errorMessage = null;
 
         try
         {

@@ -1,0 +1,54 @@
+﻿@page "/pr-analyzer"
+@using CodeReviewBot.UI.AIReview.UI.Services
+@inject PRAnalysisService PRService
+@rendermode InteractiveServer
+
+
+<h3>GitHub PR Analyzer</h3>
+
+<input @bind="repo" placeholder="Repository" />
+<input @bind="prNumber" type="number" placeholder="PR Number" />
+<button @onclick="Analyze" disabled="@isAnalyzing">Analyze</button>
+
+@if (isAnalyzing)
+{
+    <p>Analyzing the pull request, please wait...</p>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <p style="color:red;"><strong>Error:</strong> @errorMessage</p>
+}
+else if (!string.IsNullOrEmpty(analysisResult))
+{
+    <p><strong>Analysis Result:</strong></p>
+    <pre>@analysisResult</pre>
+}
+
+@code {
+    private string repo;
+    private int prNumber;
+    private string analysisResult;
+    private bool isAnalyzing = false;
+    private string errorMessage;
+
+
+    private async Task Analyze()
+    {
+        isAnalyzing = true;
+        analysisResult = null;
+        errorMessage = null;
+
+        try
+        {
+            analysisResult = await PRService.AnalyzePR(repo, prNumber);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred during analysis: {ex.Message}";
+        }
+        finally
+        {
+            isAnalyzing = false;
+        }
+    }
+}

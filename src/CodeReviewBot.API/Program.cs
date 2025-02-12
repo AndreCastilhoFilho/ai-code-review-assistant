@@ -1,4 +1,5 @@
-using CodeReviewBot.API;
+using CodeReviewBot.API.Services;
+using Microsoft.OpenApi.Models;
 using System;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,9 +7,17 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c => {
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "AI Code Review API", Version = "v1" });
+
+    c.EnableAnnotations();
+
+});
+
 builder.Services.AddSingleton<GitHubService>();
-builder.Services.AddSingleton<AIAnalysisService>();
+builder.Services.AddSingleton<OpenApiService>();
+builder.Services.AddSingleton<HuggingFaceService>();
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
@@ -22,7 +31,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 
-app.MapGet("/analyze/{prUrl}", async (string prUrl, GitHubService gitHubService, AIAnalysisService aiService) =>
+app.MapGet("/analyze/{prUrl}", async (string prUrl, GitHubService gitHubService, HuggingFaceService aiService) =>
 {
     try
     {

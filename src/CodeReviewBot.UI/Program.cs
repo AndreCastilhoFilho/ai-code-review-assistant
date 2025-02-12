@@ -9,9 +9,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddHttpClient<PRAnalysisService>(client =>
 {
-    client.BaseAddress = new Uri("https://localhost:5001");
+    client.BaseAddress = new Uri("https://localhost:7266/");
 });
-builder.Services.AddScoped<PRAnalysisService>();
 
 var app = builder.Build();
 

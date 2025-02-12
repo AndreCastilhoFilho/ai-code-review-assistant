@@ -6,8 +6,7 @@
 
 <h3>GitHub PR Analyzer</h3>
 
-<input @bind="repo" placeholder="Repository" />
-<input @bind="prNumber" type="number" placeholder="PR Number" />
+<input @bind="repo" placeholder="PR Url" />
 <button @onclick="Analyze" disabled="@isAnalyzing">Analyze</button>
 
 @if (isAnalyzing)
@@ -18,16 +17,15 @@ else if (!string.IsNullOrEmpty(errorMessage))
 {
     <p style="color:red;"><strong>Error:</strong> @errorMessage</p>
 }
-else if (!string.IsNullOrEmpty(analysisResult))
-{
-    <p><strong>Analysis Result:</strong></p>
-    <pre>@analysisResult</pre>
+else @if (!string.IsNullOrEmpty(analysisResultFormatted.ToString()))
+{  
+    <p>@analysisResultFormatted</p>
 }
 
 @code {
-    private string repo;
-    private int prNumber;
-    private string analysisResult;
+
+    private MarkupString analysisResultFormatted;
+    private string repo;  
     private bool isAnalyzing = false;
     private string errorMessage;
 
@@ -35,12 +33,21 @@ else if (!string.IsNullOrEmpty(analysisResult))
     private async Task Analyze()
     {
         isAnalyzing = true;
-        analysisResult = null;
+       
         errorMessage = null;
 
         try
         {
-            analysisResult = await PRService.AnalyzePR(repo, prNumber);
+            var rawAnalysis = await PRService.AnalyzePR(repo);
+            // Remove unnecessary JSON escaping
+            rawAnalysis = rawAnalysis
+                .Trim('"')                     // Removes extra leading/trailing double quotes
+                .Replace("\\r\\n", "<br>")      // Converts escaped newlines to actual line breaks
+                .Replace("\\n", "<br>")         // Handle any additional escaped newlines
+                .Replace("\\\"", "\"");         // Fix escaped double quotes
+
+            // Convert to MarkupString for correct HTML rendering
+            analysisResultFormatted = new MarkupString(rawAnalysis);
         }
         catch (Exception ex)
         {

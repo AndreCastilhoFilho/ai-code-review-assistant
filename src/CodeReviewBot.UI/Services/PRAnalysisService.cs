@@ -15,10 +15,21 @@
                 _httpClient = httpClient;
             }
 
-            public async Task<string> AnalyzePR(string repo, int prNumber)
+            public async Task<string> AnalyzePR(string prUrl)
             {
-                return await _httpClient.GetFromJsonAsync<string>($"/analyze/{repo}/{prNumber}");
+                var fullUrl = $"analyze/{Uri.EscapeDataString(prUrl)}";
+               
+                var response = await _httpClient.GetAsync(fullUrl);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorMessage = await response.Content.ReadAsStringAsync();
+                    throw new Exception($"API Error: {response.StatusCode} - {errorMessage}");
+                }
+
+                return await response.Content.ReadAsStringAsync();
             }
+
         }
     }
 }

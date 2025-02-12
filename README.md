@@ -1,4 +1,4 @@
-# AI Code Review Bot
+# AI Code Review Assistant
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 

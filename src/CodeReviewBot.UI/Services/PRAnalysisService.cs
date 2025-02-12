@@ -1,7 +1,7 @@
 ﻿namespace CodeReviewBot.UI
 {
+    using CodeReviewBot.API.Shared;
     using System.Net.Http;
-    using System.Net.Http.Json;
     using System.Threading.Tasks;
 
     namespace AIReview.UI.Services
@@ -15,10 +15,10 @@
                 _httpClient = httpClient;
             }
 
-            public async Task<string> AnalyzePR(string prUrl)
+            public async Task<string> AnalyzePR(string prUrl, AiModelType type)
             {
-                var fullUrl = $"analyze/{Uri.EscapeDataString(prUrl)}";
-               
+                var fullUrl = $"analyze/{Uri.EscapeDataString(prUrl)}?modelType={type}";
+
                 var response = await _httpClient.GetAsync(fullUrl);
 
                 if (!response.IsSuccessStatusCode)

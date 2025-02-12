@@ -1,22 +1,28 @@
 ﻿using System.Text.Json;
 using System.Text;
+using CodeReviewBot.API.Interfaces;
+using CodeReviewBot.API.Utils;
+using CodeReviewBot.API.Shared;
+using CodeReviewBot.API.Helpers;
 
-namespace CodeReviewBot.API.Services
+namespace CodeReviewBot.API.Strategies
 {
-    public class HuggingFaceService
+    public class HuggingFaceCodeAnalysisStrategy : ICodeAnalysisStrategy
 
     {
         private readonly HttpClient _httpClient;
         private readonly string _huggingFaceApiKey;
         private const string HuggingFaceUrl = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3";
 
-        public HuggingFaceService(HttpClient httpClient, IConfiguration configuration)
+        public AiModelType ModelType => AiModelType.HuggingFace;
+
+        public HuggingFaceCodeAnalysisStrategy(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            _huggingFaceApiKey = configuration["LlamaAI:ApiKey"];
+            _huggingFaceApiKey = configuration["HuggingFaceApi:ApiKey"];
         }
 
-        public async Task<string> AnalyzeCode(string codeSnippet)
+        public async Task<string> AnalyzeCodeAsync(string codeSnippet)
         {
             var prompt = $"{Prompt.System}  Code snippet:\n{codeSnippet}";
 
@@ -38,39 +44,20 @@ namespace CodeReviewBot.API.Services
             response.EnsureSuccessStatusCode();
 
             var responseString = await response.Content.ReadAsStringAsync();
-            responseString = responseString.Trim().Trim('"'); 
+            responseString = responseString.Trim().Trim('"');
 
             var jsonResponse = JsonSerializer.Deserialize<JsonElement>(responseString);
 
             if (jsonResponse[0].TryGetProperty("generated_text", out var generatedText))
             {
-                return FormatResponse(generatedText.GetString().Trim(), prompt);
+                return StringFormatHelper.Format(generatedText.GetString().Trim(), prompt);
             }
 
             throw new Exception("Unexpected response format from Hugging Face API.");
 
         }
 
-        private string FormatResponse(string response, string prompt)
-        {
-            // Remove the prompt from the response
-            response = response.Replace(prompt, "").Trim();
-
-            // Fix escaped newlines and quote characters
-            response = response.Replace("\\r\\n", "<br>").Replace("\\\"", "\"");
-
-            // Decode Unicode characters
-            response = System.Net.WebUtility.HtmlDecode(response);
-
-            // Convert Markdown syntax to HTML
-            response = response.Replace("**", "<strong>").Replace("```", "<pre>").Replace("\n", "<br>");
-
-            var formattedResponse = new StringBuilder();
-            formattedResponse.AppendLine("<h2>AI Code Review Report</h2>");
-            formattedResponse.AppendLine($"<p>{response}</p>");   
-
-            return formattedResponse.ToString();
-        }
+      
 
     }
 }

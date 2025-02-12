@@ -1,4 +1,4 @@
-﻿namespace CodeReviewBot.API
+﻿namespace CodeReviewBot.API.Helpers
 {
     public sealed record Prompt
     {

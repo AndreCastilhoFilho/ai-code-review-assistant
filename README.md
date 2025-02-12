@@ -15,7 +15,7 @@
 
 ## Introduction
 
-**AI Code Review Bot** is an AI-powered tool designed to analyze GitHub pull requests and provide insightful feedback on code quality, best practices, and potential issues. By leveraging OpenAI's GPT-4o model, the bot generates suggestions that help developers improve their code efficiently.
+**AI Code Review Bot** is an AI-powered tool designed to analyze GitHub pull requests and provide insightful feedback on code quality, best practices, and potential issues. The bot utilizes multiple AI models, including **OpenAI's GPT-4o** and **Hugging Face's Mistral model**, to generate meaningful suggestions that help developers improve their code efficiently.
 
 ## Features
 
@@ -24,6 +24,7 @@
 - 🔍 **Potential Issue Detection**: Identifies possible code issues before merging.
 - 🌐 **Minimal API Integration**: Built with ASP.NET 8 Minimal API for high performance.
 - 💻 **Blazor UI**: User-friendly web interface for PR analysis.
+- 🤖 **Multiple AI Models**: Supports both OpenAI and Hugging Face’s Mistral model for flexibility and cost efficiency.
 
 ## Installation
 
@@ -31,7 +32,7 @@
 
 - .NET 8 SDK ([Download Here](https://dotnet.microsoft.com/en-us/download/dotnet/8.0))
 - Docker (optional for containerized deployment)
-- OpenAI API Key (see [Configuration](#configuration))
+- API Keys for OpenAI and Hugging Face (see [Configuration](#configuration))
 
 ### Clone the Repository
 
@@ -100,7 +101,7 @@ Before fetching PR details from GitHub, configure your GitHub API token:
 
 ### OpenAI API Key Setup
 
-Before using the AI-powered features, configure your OpenAI API key:
+Before using the AI-powered features with OpenAI, configure your OpenAI API key:
 
 1. **Obtain API Key**: [Generate a key here](https://platform.openai.com/account/api-keys).
 2. **Set the API Key**:
@@ -113,6 +114,26 @@ Before using the AI-powered features, configure your OpenAI API key:
      ```json
      {
        "OpenAI": {
+         "ApiKey": "your-api-key"
+       }
+     }
+     ```
+
+### Hugging Face API Key Setup
+
+The bot also supports **Hugging Face’s Mistral model**, which offers a **free tier**.
+
+1. **Obtain API Key**: [Create an account and get an API key](https://huggingface.co/settings/tokens).
+2. **Set the API Key**:
+
+   - Using environment variables:
+     ```bash
+     export HUGGINGFACE_API_KEY="your-api-key"
+     ```
+   - Or, add it to `appsettings.json`:
+     ```json
+     {
+       "HuggingFaceApi": {
          "ApiKey": "your-api-key"
        }
      }
@@ -135,6 +156,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Acknowledgements
 
 - [OpenAI](https://openai.com/) for providing AI capabilities.
+- [Hugging Face](https://huggingface.co/) for their free-tier Mistral model.
 - [ASP.NET](https://dotnet.microsoft.com/en-us/apps/aspnet) for Minimal API and Blazor UI.
 
 ---

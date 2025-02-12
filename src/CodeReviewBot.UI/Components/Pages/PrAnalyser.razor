@@ -1,4 +1,5 @@
 ﻿@page "/pr-analyzer"
+@using CodeReviewBot.API.Shared
 @using CodeReviewBot.UI.AIReview.UI.Services
 @using Blazor.Markdown
 @inject PRAnalysisService PRService
@@ -7,8 +8,17 @@
 
 <h3>GitHub PR Analyzer</h3>
 
-<input @bind="repo" placeholder="PR Url" />
-<button @onclick="Analyze" disabled="@isAnalyzing">Analyze</button>
+<input @bind="repo" @bind:event="oninput" placeholder="Enter GitHub PR URL..." class="form-control" />
+
+<select @bind="SelectedModel">
+    @foreach (var model in Enum.GetValues<AiModelType>())
+    {
+        <option value="@model">@model</option>
+    }
+</select>
+
+<button @onclick="Analyze" disabled="@(!IsValidUrl || isAnalyzing)"> @(isAnalyzing ? "Analyzing..." : "Analyze")</button>
+
 
 @if (isAnalyzing)
 {
@@ -30,15 +40,18 @@ else @if (!string.IsNullOrEmpty(analysisResultFormatted))
     private string repo = string.Empty;
     private bool isAnalyzing = false;
     private string errorMessage = string.Empty;
-
+    private AiModelType SelectedModel = AiModelType.HuggingFace;
+    private bool IsValidUrl => IsValidGitHubPrUrl(repo);
 
     private async Task Analyze()
     {
+        if (!IsValidUrl || isAnalyzing) return;
+
         isAnalyzing = true;
 
         try
         {
-            var rawAnalysis = await PRService.AnalyzePR(repo);
+            var rawAnalysis = await PRService.AnalyzePR(repo, SelectedModel);
 
             // Clean up and prepare the HTML for rendering
             analysisResultFormatted = rawAnalysis
@@ -54,6 +67,22 @@ else @if (!string.IsNullOrEmpty(analysisResultFormatted))
         finally
         {
             isAnalyzing = false;
+        }
+    }
+
+    // Function to validate GitHub PR URLs
+    private bool IsValidGitHubPrUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+
+        try
+        {
+            var uri = new Uri(url);
+            return uri.Host == "github.com" && uri.AbsolutePath.Contains("/pull/");
+        }
+        catch
+        {
+            return false;
         }
     }
 }

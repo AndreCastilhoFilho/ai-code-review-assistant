@@ -1,6 +1,9 @@
+using CodeReviewBot.API.Interfaces;
 using CodeReviewBot.API.Services;
+using CodeReviewBot.API.Shared;
+using CodeReviewBot.API.Strategies;
+using CodeReviewBot.API.Utils;
 using Microsoft.OpenApi.Models;
-using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,8 +18,12 @@ builder.Services.AddSwaggerGen(c => {
 });
 
 builder.Services.AddSingleton<GitHubService>();
-builder.Services.AddSingleton<OpenApiService>();
-builder.Services.AddSingleton<HuggingFaceService>();
+builder.Services.AddSingleton<ICodeAnalysisStrategy, HuggingFaceCodeAnalysisStrategy>();
+builder.Services.AddSingleton<ICodeAnalysisStrategy, OpenAiCodeAnalysisStrategy>();
+
+builder.Services.AddSingleton<CodeAnalysisStrategyFactory>();
+
+
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
@@ -31,13 +38,18 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 
-app.MapGet("/analyze/{prUrl}", async (string prUrl, GitHubService gitHubService, HuggingFaceService aiService) =>
+app.MapGet("/analyze/{prUrl}", async (string prUrl, CodeAnalysisStrategyFactory strategyFactory, GitHubService gitHubService, AiModelType? modelType) =>
 {
     try
     {
-        var (owner, repo, prNumber) = ParseGitHubPrUrl(prUrl);
+        var (owner, repo, prNumber) = StringFormatHelper.ParseGitHubPrUrl(prUrl);
         var prData = await gitHubService.FetchPRDetails(owner, repo, prNumber);
-        var analysisResult = await aiService.AnalyzeCode(prData);
+
+        // Default to HuggingFace if no model is specified
+        var selectedModel = modelType ?? AiModelType.HuggingFace;
+        var strategy = strategyFactory.GetStrategy(selectedModel);
+
+        var analysisResult = await strategy.AnalyzeCodeAsync(prData);
         return Results.Ok(analysisResult);
     }
     catch (Exception ex)
@@ -46,26 +58,7 @@ app.MapGet("/analyze/{prUrl}", async (string prUrl, GitHubService gitHubService,
     }
 });
 
-(string owner, string repo, int prNumber) ParseGitHubPrUrl(string prUrl)
-{
-    var decodedUrl = Uri.UnescapeDataString(prUrl);
-    // Example URL: https://github.com/owner/repo/pull/123
-    var uri = new Uri(decodedUrl);
-    var segments = uri.Segments;
-    if (segments.Length < 5 || segments[3].TrimEnd('/') != "pull")
-    {
-        throw new ArgumentException("Invalid GitHub PR URL format.");
-    }
 
-    var owner = segments[1].TrimEnd('/');
-    var repo = segments[2].TrimEnd('/');
-    if (!int.TryParse(segments[4].TrimEnd('/'), out int prNumber))
-    {
-        throw new ArgumentException("Invalid PR number in URL.");
-    }
-
-    return (owner, repo, prNumber);
-}
 
 app.Run();
 

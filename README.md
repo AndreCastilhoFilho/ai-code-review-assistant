@@ -15,11 +15,11 @@
 
 ## Introduction
 
-**AI Code Review Bot** is an AI-powered tool designed to analyze GitHub pull requests and provide insightful feedback on code quality, best practices, and potential issues. The bot utilizes multiple AI models, including **OpenAI's GPT-4o** and **Hugging Face's Mistral model**, to generate meaningful suggestions that help developers improve their code efficiently.
+**AI Code Review Assistant is an AI-powered tool designed to analyze GitHub pull requests and provide insightful feedback on code quality, best practices, and potential issues. The bot utilizes multiple AI models, including OpenAI's GPT-4o and Hugging Face's Mistral model, to generate meaningful suggestions that help developers improve their code efficiently.
 
 ## Features
 
-- 🚀 **Automated Code Review**: Fetches GitHub PRs and provides AI-driven insights.
+- 🚀 AI-Powered Code Review: Analyzes provided GitHub PRs and offers AI-driven insights.
 - 📖 **Best Practices Analysis**: Highlights readability and maintainability concerns.
 - 🔍 **Potential Issue Detection**: Identifies possible code issues before merging.
 - 🌐 **Minimal API Integration**: Built with ASP.NET 8 Minimal API for high performance.

@@ -1,5 +1,6 @@
 ﻿@page "/pr-analyzer"
 @using CodeReviewBot.UI.AIReview.UI.Services
+@using Blazor.Markdown
 @inject PRAnalysisService PRService
 @rendermode InteractiveServer
 
@@ -17,15 +18,16 @@ else if (!string.IsNullOrEmpty(errorMessage))
 {
     <p style="color:red;"><strong>Error:</strong> @errorMessage</p>
 }
-else @if (!string.IsNullOrEmpty(analysisResultFormatted.ToString()))
-{  
-    <p>@analysisResultFormatted</p>
+else @if (!string.IsNullOrEmpty(analysisResultFormatted))
+{
+    <br />
+    @((MarkupString)analysisResultFormatted)
 }
 
 @code {
 
-    private MarkupString analysisResultFormatted;
-    private string repo;  
+    private string analysisResultFormatted = string.Empty;
+    private string repo;
     private bool isAnalyzing = false;
     private string errorMessage;
 
@@ -33,21 +35,18 @@ else @if (!string.IsNullOrEmpty(analysisResultFormatted.ToString()))
     private async Task Analyze()
     {
         isAnalyzing = true;
-       
         errorMessage = null;
 
         try
         {
             var rawAnalysis = await PRService.AnalyzePR(repo);
-            // Remove unnecessary JSON escaping
-            rawAnalysis = rawAnalysis
-                .Trim('"')                     // Removes extra leading/trailing double quotes
-                .Replace("\\r\\n", "<br>")      // Converts escaped newlines to actual line breaks
-                .Replace("\\n", "<br>")         // Handle any additional escaped newlines
-                .Replace("\\\"", "\"");         // Fix escaped double quotes
 
-            // Convert to MarkupString for correct HTML rendering
-            analysisResultFormatted = new MarkupString(rawAnalysis);
+            // Clean up and prepare the HTML for rendering
+            analysisResultFormatted = rawAnalysis
+                .Trim('"')                     // Removes extra leading/trailing double quotes
+                .Replace("\\r\\n", "\n")        // Preserve new lines
+                .Replace("\\n", "\n")           // Ensure additional new lines render properly
+                .Replace("\\\"", "\"");         // Fix escaped double quotes
         }
         catch (Exception ex)
         {

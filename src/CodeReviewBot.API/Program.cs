@@ -10,7 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c => {
+builder.Services.AddSwaggerGen(c =>
+{
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "AI Code Review API", Version = "v1" });
 
     c.EnableAnnotations();
@@ -43,14 +44,11 @@ app.MapGet("/analyze/{prUrl}", async (string prUrl, CodeAnalysisStrategyFactory 
     try
     {
         var (owner, repo, prNumber) = StringFormatHelper.ParseGitHubPrUrl(prUrl);
-        var prData = await gitHubService.FetchPRDetails(owner, repo, prNumber);
-
-        // Default to HuggingFace if no model is specified
         var selectedModel = modelType ?? AiModelType.HuggingFace;
         var strategy = strategyFactory.GetStrategy(selectedModel);
 
-        var analysisResult = await strategy.AnalyzeCodeAsync(prData);
-        return Results.Ok(analysisResult);
+        await strategy.AnalyzeAndReviewPR(owner, repo, prNumber);
+        return Results.Ok("PR analysed sucessfully. Comments were done in PR");
     }
     catch (Exception ex)
     {

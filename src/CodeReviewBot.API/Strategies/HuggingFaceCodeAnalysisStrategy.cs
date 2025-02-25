@@ -1,31 +1,31 @@
-﻿using System.Text.Json;
-using System.Text;
-using CodeReviewBot.API.Interfaces;
-using CodeReviewBot.API.Utils;
+﻿using CodeReviewBot.API.Helpers;
+using CodeReviewBot.API.Services;
 using CodeReviewBot.API.Shared;
-using CodeReviewBot.API.Helpers;
+using System.Text;
+using System.Text.Json;
 
 namespace CodeReviewBot.API.Strategies
 {
-    public class HuggingFaceCodeAnalysisStrategy : ICodeAnalysisStrategy
-
+    public class HuggingFaceCodeAnalysisStrategy : BaseCodeAnalysisStrategy
     {
         private readonly HttpClient _httpClient;
         private readonly string _huggingFaceApiKey;
         private const string HuggingFaceUrl = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3";
 
-        public AiModelType ModelType => AiModelType.HuggingFace;
-
-        public HuggingFaceCodeAnalysisStrategy(HttpClient httpClient, IConfiguration configuration)
+        public HuggingFaceCodeAnalysisStrategy(
+            HttpClient httpClient, 
+            GitHubService githubService, 
+            IConfiguration configuration) : base(githubService)
         {
             _httpClient = httpClient;
             _huggingFaceApiKey = configuration["HuggingFaceApi:ApiKey"];
         }
 
-        public async Task<string> AnalyzeCodeAsync(string codeSnippet)
-        {
-            var prompt = $"{Prompt.System}  Code snippet:\n{codeSnippet}";
+        public override AiModelType ModelType => AiModelType.HuggingFace;
 
+        protected override async Task<List<CodeReviewComment>> AnalyzeCodeWithPrompt(string codeSnippet, string currentFileName)
+        {
+            var prompt = string.Format(Prompt.CodeReviewSystem, currentFileName, codeSnippet);
             var requestBody = new
             {
                 inputs = prompt,
@@ -44,21 +44,15 @@ namespace CodeReviewBot.API.Strategies
             response.EnsureSuccessStatusCode();
 
             var responseString = await response.Content.ReadAsStringAsync();
-            responseString = responseString.Trim().Trim('"');
-
             var jsonResponse = JsonSerializer.Deserialize<JsonElement>(responseString);
 
             if (jsonResponse[0].TryGetProperty("generated_text", out var generatedText))
             {
-                return StringFormatHelper.Format(generatedText.GetString().Trim(), prompt);
+                return ParseAIResponse(generatedText.GetString());
             }
 
             throw new Exception("Unexpected response format from Hugging Face API.");
-
         }
-
-      
-
     }
 }
 

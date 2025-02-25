@@ -1,6 +1,8 @@
 using CodeReviewBot.API.Interfaces;
+using CodeReviewBot.API.Models;
 using CodeReviewBot.API.Services;
 using CodeReviewBot.API.Shared;
+using Octokit;
 using System.Text;
 
 namespace CodeReviewBot.API.Strategies
@@ -18,69 +20,6 @@ namespace CodeReviewBot.API.Strategies
 
         protected abstract Task<List<CodeReviewComment>> AnalyzeCodeWithPrompt(string codeSnippet, string currentFileName);
 
-        private (DiffInfo diffInfo, Dictionary<int, int> lineMapping) ParseDiffWithLineNumbers(string patch)
-        {
-            var diffInfo = new DiffInfo();
-            var lines = patch.Split('\n');
-            var currentChunk = new DiffChunk();
-            var diffPosition = 0;
-            var lineNumber = 0;
-            var chunkLines = new List<string>();
-            var absoluteLineMapping = new Dictionary<int, int>();
-
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("@@"))
-                {
-                    if (chunkLines.Count > 0)
-                    {
-                        currentChunk.Content = string.Join("\n", chunkLines);
-                        diffInfo.Chunks.Add(currentChunk);
-                    }
-
-                    chunkLines = new List<string> { line };
-                    var match = System.Text.RegularExpressions.Regex.Match(line, @"@@ -\d+,?\d* \+(\d+),?\d* @@");
-                    if (match.Success)
-                    {
-                        currentChunk = new DiffChunk
-                        {
-                            NewStart = int.Parse(match.Groups[1].Value),
-                            LineMapping = new Dictionary<int, int>()
-                        };
-                        lineNumber = currentChunk.NewStart - 1;
-                    }
-                    diffPosition = 0;
-                    continue;
-                }
-
-                chunkLines.Add(line);
-                if (line.StartsWith("+"))
-                {
-                    lineNumber++;
-                    diffPosition++;
-                    absoluteLineMapping[lineNumber] = diffPosition;
-                    currentChunk.LineMapping[lineNumber] = diffPosition;
-                }
-                else if (!line.StartsWith("-"))
-                {
-                    lineNumber++;
-                    diffPosition++;
-                }
-                else
-                {
-                    diffPosition++;
-                }
-            }
-
-            if (chunkLines.Count > 0)
-            {
-                currentChunk.Content = string.Join("\n", chunkLines);
-                diffInfo.Chunks.Add(currentChunk);
-            }
-
-            return (diffInfo, absoluteLineMapping);
-        }
-
         public async Task AnalyzeAndReviewPR(string owner, string repo, int prNumber)
         {
             var pr = await _githubService.GetPullRequest(owner, repo, prNumber);
@@ -89,90 +28,97 @@ namespace CodeReviewBot.API.Strategies
 
             foreach (var file in prFiles)
             {
-                if (file.Status != "modified" && file.Status != "added")
-                    continue;
+                if (!IsFileModified(file)) continue;
 
-                var simpleFileName = Path.GetFileName(file.FileName);
+                var fileName = Path.GetFileName(file.FileName);
                 var diffInfo = ParseDiffInfo(file.Patch);
-                var analysisResults = await AnalyzeCodeWithPrompt(file.Patch, simpleFileName);
+                var analysisResults = await AnalyzeCodeWithPrompt(file.Patch, fileName);
 
-                // Processar cada chunk separadamente
-                foreach (var chunk in diffInfo.Chunks)
-                {
-                    var chunkLines = chunk.Content.Split('\n');
-                    var addedLines = chunkLines
-                        .Select((line, index) => new { line, index })
-                        .Where(x => x.line.StartsWith("+") && !x.line.StartsWith("++"))
-                        .Select(x => new 
-                        { 
-                            Index = x.index,
-                            LineNumber = chunk.NewStart + x.index - 1 // Ajustar para o número real da linha
-                        })
-                        .ToList();
-
-                    if (!addedLines.Any()) continue;
-
-                    // Filtrar comentários que são específicos para as linhas adicionadas neste chunk
-                    var chunkComments = analysisResults
-                        .Where(c => c.FileName.Equals(simpleFileName, StringComparison.OrdinalIgnoreCase) &&
-                                   addedLines.Any(l => l.LineNumber == c.LineNumber))
-                        .ToList();
-
-                    if (!chunkComments.Any()) continue;
-
-                    // Usar o índice da primeira linha adicionada como posição do comentário
-                    var position = addedLines.First().Index;
-                    var formattedComment = FormatGroupedComments(chunkComments);
-                    
-                    await _githubService.CreatePRReviewComment(
-                        owner,
-                        repo,
-                        prNumber,
-                        pr.Head.Sha,
-                        file.FileName,
-                        formattedComment,
-                        chunk.Content,
-                        position,
-                        review.Id
-                    );
-                }
+                await CreateCommentsForFile(file, diffInfo, analysisResults, pr, owner, repo, prNumber, review.Id);
             }
         }
 
-        protected string FormatGroupedComments(IEnumerable<CodeReviewComment> comments)
+        private static bool IsFileModified(PullRequestFile file)
+            => file.Status is "modified" or "added";
+
+        private async Task CreateCommentsForFile(
+            PullRequestFile file, 
+            DiffInfo diffInfo, 
+            List<CodeReviewComment> analysisResults,
+            PullRequest pr,
+            string owner,
+            string repo,
+            int prNumber,
+            long reviewId)
         {
-            var sb = new StringBuilder();
-
-            var commentsByCategory = comments.GroupBy(c => c.Category)
-                .OrderBy(g => g.Key);
-
-            foreach (var categoryGroup in commentsByCategory)
+            foreach (var chunk in diffInfo.Chunks)
             {
-                sb.AppendLine($"📝 **{categoryGroup.Key}**");
-                
-                var orderedComments = categoryGroup.OrderBy(c => c.Severity == "HIGH" ? 0 : 
-                                                       c.Severity == "MEDIUM" ? 1 : 2);
-                
-                foreach (var comment in orderedComments)
-                {
-                    sb.AppendLine($"{GetSeverityEmoji(comment.Severity)} **{comment.Severity}**: {comment.Message}");
-                }
-                
-                sb.AppendLine();
-            }
+                var addedLines = GetAddedLines(chunk);
+                if (!addedLines.Any()) continue;
 
-            return sb.ToString().TrimEnd();
+                var chunkComments = GetCommentsForChunk(analysisResults, file.FileName, addedLines);
+                if (!chunkComments.Any()) continue;
+
+                await CreateCommentForChunk(
+                    chunk, 
+                    addedLines.First().Index,
+                    chunkComments,
+                    file,
+                    pr,
+                    owner,
+                    repo,
+                    prNumber,
+                    reviewId);
+            }
         }
 
-        protected string GetSeverityEmoji(string severity)
+        private static List<(int Index, int LineNumber)> GetAddedLines(DiffChunk chunk)
         {
-            return severity switch
-            {
-                "HIGH" => "🔴",
-                "MEDIUM" => "🟡",
-                "LOW" => "🟢",
-                _ => "ℹ️"
-            };
+            return chunk.Content.Split('\n')
+                .Select((line, index) => new { line, index })
+                .Where(x => x.line.StartsWith("+") && !x.line.StartsWith("++"))
+                .Select(x => (
+                    Index: x.index,
+                    LineNumber: chunk.NewStart + x.index - 1
+                ))
+                .ToList();
+        }
+
+        private static List<CodeReviewComment> GetCommentsForChunk(
+            List<CodeReviewComment> analysisResults,
+            string fileName,
+            List<(int Index, int LineNumber)> addedLines)
+        {
+            return analysisResults
+                .Where(c => c.FileName.Equals(Path.GetFileName(fileName), StringComparison.OrdinalIgnoreCase) &&
+                           addedLines.Any(l => l.LineNumber == c.LineNumber))
+                .ToList();
+        }
+
+        private async Task CreateCommentForChunk(
+            DiffChunk chunk,
+            int position,
+            List<CodeReviewComment> comments,
+            PullRequestFile file,
+            PullRequest pr,
+            string owner,
+            string repo,
+            int prNumber,
+            long reviewId)
+        {
+            var formattedComment = FormatGroupedComments(comments);
+            
+            await _githubService.CreatePRReviewComment(
+                owner,
+                repo,
+                prNumber,
+                pr.Head.Sha,
+                file.FileName,
+                formattedComment,
+                chunk.Content,
+                position,
+                reviewId
+            );
         }
 
         private DiffInfo ParseDiffInfo(string patch)
@@ -185,139 +131,112 @@ namespace CodeReviewBot.API.Strategies
             {
                 if (line.StartsWith("@@"))
                 {
-                    if (!string.IsNullOrEmpty(currentChunk.Content))
-                    {
-                        diffInfo.Chunks.Add(currentChunk);
-                    }
-
-                    var match = System.Text.RegularExpressions.Regex.Match(line, @"@@ -\d+,?\d* \+(\d+),?\d* @@");
-                    if (match.Success)
-                    {
-                        currentChunk = new DiffChunk
-                        {
-                            NewStart = int.Parse(match.Groups[1].Value),
-                            Content = line + "\n"
-                        };
-                    }
+                    AddCurrentChunkIfNotEmpty(diffInfo, currentChunk);
+                    currentChunk = CreateNewChunk(line);
                     continue;
                 }
 
                 currentChunk.Content += line + "\n";
             }
 
-            if (!string.IsNullOrEmpty(currentChunk.Content))
-            {
-                diffInfo.Chunks.Add(currentChunk);
-            }
-
+            AddCurrentChunkIfNotEmpty(diffInfo, currentChunk);
             return diffInfo;
         }
 
-        private (int position, string diffHunk) GetPositionAndDiffHunk(DiffInfo diffInfo, int targetLine)
+        private static void AddCurrentChunkIfNotEmpty(DiffInfo diffInfo, DiffChunk chunk)
         {
-            foreach (var chunk in diffInfo.Chunks)
+            if (!string.IsNullOrEmpty(chunk.Content))
             {
-                if (chunk.LineMapping.ContainsKey(targetLine))
-                {
-                    var position = chunk.LineMapping[targetLine];
-                    var lines = chunk.Content.Split('\n');
-                    var contextLines = new List<string> { lines[0] };
-
-                    for (var i = Math.Max(1, position - 3); i <= Math.Min(lines.Length - 1, position + 3); i++)
-                    {
-                        contextLines.Add(lines[i]);
-                    }
-
-                    return (position, string.Join("\n", contextLines));
-                }
+                diffInfo.Chunks.Add(chunk);
             }
-
-            var nearestLine = diffInfo.Chunks
-                .SelectMany(c => c.LineMapping)
-                .OrderBy(kv => Math.Abs(kv.Key - targetLine))
-                .FirstOrDefault();
-
-            if (nearestLine.Key != 0)
-            {
-                var chunk = diffInfo.Chunks.First(c => c.LineMapping.ContainsKey(nearestLine.Key));
-                var lines = chunk.Content.Split('\n');
-                var contextLines = new List<string> { lines[0] };
-
-                var position = nearestLine.Value;
-                for (var i = Math.Max(1, position - 3); i <= Math.Min(lines.Length - 1, position + 3); i++)
-                {
-                    contextLines.Add(lines[i]);
-                }
-
-                return (nearestLine.Value, string.Join("\n", contextLines));
-            }
-
-            return (-1, null);
         }
+
+        private static DiffChunk CreateNewChunk(string line)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(line, @"@@ -\d+,?\d* \+(\d+),?\d* @@");
+            return new DiffChunk
+            {
+                NewStart = match.Success ? int.Parse(match.Groups[1].Value) : 0,
+                Content = line + "\n"
+            };
+        }
+
+        protected string FormatGroupedComments(IEnumerable<CodeReviewComment> comments)
+        {
+            var sb = new StringBuilder();
+            var commentsByCategory = comments.GroupBy(c => c.Category)
+                .OrderBy(g => g.Key);
+
+            foreach (var categoryGroup in commentsByCategory)
+            {
+                sb.AppendLine($"📝 **{categoryGroup.Key}**");
+                
+                var orderedComments = categoryGroup
+                    .OrderBy(c => GetSeverityOrder(c.Severity));
+                
+                foreach (var comment in orderedComments)
+                {
+                    sb.AppendLine($"{GetSeverityEmoji(comment.Severity)} **{comment.Severity}**: {comment.Message}");
+                }
+                
+                sb.AppendLine();
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static int GetSeverityOrder(string severity) => severity switch
+        {
+            "HIGH" => 0,
+            "MEDIUM" => 1,
+            "LOW" => 2,
+            _ => 3
+        };
+
+        protected static string GetSeverityEmoji(string severity) => severity switch
+        {
+            "HIGH" => "🔴",
+            "MEDIUM" => "🟡",
+            "LOW" => "🟢",
+            _ => "ℹ️"
+        };
 
         protected List<CodeReviewComment> ParseAIResponse(string aiResponse)
         {
-            var comments = new List<CodeReviewComment>();
-            
-            var lines = aiResponse.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            
-            foreach (var line in lines)
+            var comments = aiResponse.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(ParseCommentLine)
+                .Where(c => c != null)
+                .ToList();
+
+            return RemoveDuplicateComments(comments);
+        }
+
+        private static CodeReviewComment ParseCommentLine(string line)
+        {
+            var trimmedLine = line.Trim();
+            if (string.IsNullOrEmpty(trimmedLine)) return null;
+
+            var parts = trimmedLine.Split(new[] { ' ', ':', '-' }, 5);
+            if (parts.Length < 5) return null;
+
+            if (!int.TryParse(parts[1], out int lineNumber) || lineNumber <= 0) return null;
+
+            return new CodeReviewComment
             {
-                var trimmedLine = line.Trim();
-                if (string.IsNullOrEmpty(trimmedLine)) continue;
-                
-                var fileLineParts = trimmedLine.Split(' ', 2);
-                if (fileLineParts.Length != 2) continue;
+                FileName = parts[0].Trim('[', ']'),
+                LineNumber = lineNumber,
+                Category = parts[2].Trim(),
+                Severity = parts[3].Trim(),
+                Message = parts[4].Trim()
+            };
+        }
 
-                var fileAndLine = fileLineParts[0].Split(':');
-                if (fileAndLine.Length != 2) continue;
-
-                var categoryParts = fileLineParts[1].Split(new[] { ':', '-' }, 3);
-                if (categoryParts.Length != 3) continue;
-
-                if (int.TryParse(fileAndLine[1], out int lineNumber))
-                {
-                    // Verificar se é uma linha que foi realmente modificada
-                    if (lineNumber > 0)
-                    {
-                        comments.Add(new CodeReviewComment
-                        {
-                            FileName = fileAndLine[0].Trim('[', ']'), // Remover os colchetes do nome do arquivo
-                            LineNumber = lineNumber,
-                            Category = categoryParts[0].Trim(),
-                            Severity = categoryParts[1].Trim(),
-                            Message = categoryParts[2].Trim()
-                        });
-                    }
-                }
-            }
-            
-            // Remover comentários duplicados
+        private static List<CodeReviewComment> RemoveDuplicateComments(List<CodeReviewComment> comments)
+        {
             return comments
                 .GroupBy(c => new { c.FileName, c.LineNumber, c.Category, c.Message })
                 .Select(g => g.First())
                 .ToList();
         }
-    }
-
-    public class CodeReviewComment
-    {
-        public string FileName { get; set; }
-        public int LineNumber { get; set; }
-        public string Category { get; set; }
-        public string Severity { get; set; }
-        public string Message { get; set; }
-    }
-
-    public class DiffInfo
-    {
-        public List<DiffChunk> Chunks { get; set; } = new();
-    }
-
-    public class DiffChunk
-    {
-        public int NewStart { get; set; }
-        public string Content { get; set; }
-        public Dictionary<int, int> LineMapping { get; set; } = new();
     }
 }

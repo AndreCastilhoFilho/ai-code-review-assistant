@@ -1,4 +1,5 @@
 ﻿using CodeReviewBot.API.Helpers;
+using CodeReviewBot.API.Models;
 using CodeReviewBot.API.Services;
 using CodeReviewBot.API.Shared;
 using System.Text;

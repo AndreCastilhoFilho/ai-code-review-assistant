@@ -80,7 +80,7 @@ namespace CodeReviewBot.API.Services
             }
             catch (Exception ex)
             {
-                throw new Exception($"Erro ao criar comentário de revisão no PR: {ex.Message}", ex);
+                throw new Exception($"Error creating PR review comment: {ex.Message}", ex);
             }
         }
     }
